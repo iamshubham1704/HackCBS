@@ -4,8 +4,13 @@ dotenv.config({ path: ".env.local" });
 
 const connectDB = async () => {
   try {
-    console.log("MongoDB URI:", process.env.MONGODB_URI);
-    await mongoose.connect(process.env.MONGODB_URI, {
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      console.error("❌ MONGODB_URI environment variable is not set");
+      process.exit(1);
+    }
+    
+    await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });

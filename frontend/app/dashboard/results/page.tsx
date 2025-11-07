@@ -51,11 +51,11 @@ export default function ResultsPage() {
       
       for (const election of response.elections) {
         if (election.isCompleted) {
-          // Fetch results from blockchain
-          const blockchainResults: any = await fetchResultsFromBlockchain(parseInt(election.id));
+          // Fetch results from blockchain (use string ID, not parsed integer)
+          const blockchainResults: any = await fetchResultsFromBlockchain(election.id);
           
           // Calculate total votes
-          const totalVotes = blockchainResults.candidates.reduce((sum: number, candidate: any) => sum + candidate.voteCount, 0);
+          const totalVotes = blockchainResults.candidates.reduce((sum: number, candidate: any) => sum + (candidate.voteCount || 0), 0);
           
           // Transform blockchain results to match our interface
           electionResults.push({
@@ -66,8 +66,8 @@ export default function ResultsPage() {
             candidates: blockchainResults.candidates.map((candidate: any) => ({
               id: candidate.id,
               name: candidate.name,
-              party: getCandidateParty(candidate.id),
-              votes: candidate.voteCount,
+              party: candidate.party || getCandidateParty(parseInt(candidate.id) || 0),
+              votes: candidate.voteCount || 0,
               percentage: totalVotes > 0 ? Math.round((candidate.voteCount / totalVotes) * 1000) / 10 : 0
             }))
           });

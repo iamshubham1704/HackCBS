@@ -24,6 +24,7 @@ import User from "./models/usermodel.js";
 import Kyc from "./models/KYCmodel.js";
 import Admin from "./models/adminModel.js";
 import Election from "./models/electionModel.js";
+import Vote from "./models/voteModel.js";
 import generateVoterId from "./utils/voterIdGenerator.js";
 
 // Connect to MongoDB
@@ -67,7 +68,7 @@ app.post("/api/register/personal", async (req, res) => {
       fullName: name,
       email,
       phone,
-      role: "candidate", // Default role for now
+      role: "voter", // Set as voter for citizens registering to vote
       password: "temp_password", // Will be set properly during final registration
     });
 
@@ -275,18 +276,30 @@ app.post("/api/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid voter ID format" });
     }
     
-    // In a real implementation, we would check the database for the voter ID
-    // For now, we'll simulate a successful validation
-    console.log("Validating voter ID:", voterId);
+    // Check the database for the voter ID
+    const user = await User.findOne({ voterId });
     
-    // Simulate database lookup delay
-    await new Promise(resolve => setTimeout(resolve, 300));
+    if (!user) {
+      return res.status(404).json({ message: "Voter ID not found. Please register first." });
+    }
+    
+    // Check if user is verified
+    if (user.kycStatus !== "verified") {
+      return res.status(403).json({ 
+        message: "Your account is not yet verified. Please complete KYC verification." 
+      });
+    }
     
     // Return success response
     res.status(200).json({
       message: "Voter ID validated successfully",
       voterId: voterId,
-      valid: true
+      valid: true,
+      user: {
+        id: user._id,
+        name: user.fullName,
+        email: user.email
+      }
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -354,28 +367,19 @@ app.get("/api/elections/:electionId/candidates", async (req, res) => {
   try {
     const { electionId } = req.params;
     
-    // In a real implementation, this would fetch candidates from the database
-    // For now, returning sample data
-    const candidates = [
-      {
-        id: "c1",
-        name: "Rajesh Kumar",
-        party: "Indian National Congress",
-        symbol: "Hand"
-      },
-      {
-        id: "c2",
-        name: "Priya Sharma",
-        party: "Bharatiya Janata Party",
-        symbol: "Lotus"
-      },
-      {
-        id: "c3",
-        name: "Amit Patel",
-        party: "Aam Aadmi Party",
-        symbol: "Broom"
-      }
-    ];
+    // Find the election in the database
+    const election = await Election.findById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: "Election not found" });
+    }
+    
+    // Return the actual candidates from the database
+    const candidates = election.candidates.map((candidate, index) => ({
+      id: candidate._id.toString(),
+      name: candidate.name,
+      party: candidate.party,
+      voteCount: candidate.voteCount
+    }));
     
     res.status(200).json({
       message: "Candidates retrieved successfully",
@@ -392,16 +396,58 @@ app.post("/api/vote", async (req, res) => {
   try {
     const { userId, electionId, candidateId, voterId } = req.body;
     
+    // Log the incoming request for debugging
+    console.log("Vote request received:", { userId, electionId, candidateId, voterId });
+    
     // Validate required fields
     if (!userId || !electionId || !candidateId || !voterId) {
       return res.status(400).json({ message: "User ID, election ID, candidate ID, and voter ID are required" });
     }
     
+    // Check if the voter has already voted in this election
+    const existingVote = await Vote.findOne({ voterId, electionId });
+    if (existingVote) {
+      return res.status(400).json({ message: "You have already voted in this election" });
+    }
+    
+    // Find the election
+    const election = await Election.findById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: "Election not found" });
+    }
+    
+    // Check if election is active
+    if (!election.isActive || election.isCompleted) {
+      return res.status(400).json({ message: "Election is not active" });
+    }
+    
+    // Find the candidate by ID (candidateId can be either ObjectId string or index)
+    let candidate = null;
+    let candidateObjectId = null;
+    
+    // First try to find by ObjectId
+    candidate = election.candidates.find(c => c._id.toString() === candidateId);
+    
+    // If not found, try as index (for backward compatibility)
+    if (!candidate) {
+      const candidateIndex = parseInt(candidateId);
+      if (!isNaN(candidateIndex) && candidateIndex >= 0 && candidateIndex < election.candidates.length) {
+        candidate = election.candidates[candidateIndex];
+      }
+    }
+    
+    if (!candidate) {
+      return res.status(404).json({ message: "Candidate not found in this election" });
+    }
+    
+    candidateObjectId = candidate._id;
+    
+    console.log("Candidate found:", { candidateObjectId, candidateName: candidate.name });
+    
     // In a real implementation, this would:
-    // 1. Check if the user has already voted in this election
-    // 2. Verify the user is eligible to vote in this election
-    // 3. Record the vote in the database
-    // 4. Submit the vote to the blockchain
+    // 1. Verify the user is eligible to vote in this election
+    // 2. Record the vote in the database
+    // 3. Submit the vote to the blockchain
     
     // For blockchain integration, we would:
     // 1. Hash the voter ID to create an anonymous voter hash
@@ -409,18 +455,41 @@ app.post("/api/vote", async (req, res) => {
     // 3. Wait for the transaction to be mined
     // 4. Return the transaction hash
     
-    // Simulate blockchain interaction
-    const voterHash = "0x" + crypto.createHash('sha256').update(voterId + "secret_salt").digest('hex');
-    const transactionHash = "0x" + Math.random().toString(36).substr(2, 32);
+    // Create anonymous voter hash using proper cryptographic hash
+    const salt = process.env.VOTER_HASH_SALT || "votechain_secret_salt_2025";
+    const voterHash = "0x" + crypto.createHash('sha256').update(voterId + salt).digest('hex');
+    // Generate transaction hash (in production, this would come from blockchain)
+    const transactionHash = "0x" + crypto.createHash('sha256').update(voterId + electionId + candidateId + Date.now().toString()).digest('hex').substring(0, 64);
+    
+    console.log("Generated hashes:", { voterHash, transactionHash });
     
     // Simulate blockchain delay
     await new Promise(resolve => setTimeout(resolve, 1000));
     
+    // Record the vote in the database
+    const voteRecord = new Vote({
+      voterId,
+      electionId,
+      candidateId: candidateObjectId, // Store the actual ObjectId
+      voterState: "Delhi", // In a real app, this would come from the voter's data
+      blockchainHash: transactionHash
+    });
+    
+    console.log("Saving vote record...");
+    await voteRecord.save();
+    console.log("Vote record saved:", voteRecord._id);
+    
+    // Update candidate vote count
+    candidate.voteCount += 1;
+    console.log("Updating election with new vote count...");
+    await election.save();
+    console.log("Election updated");
+    
     const voteTransaction = {
-      id: "tx_" + Math.random().toString(36).substr(2, 9),
+      id: voteRecord._id,
       userId,
       electionId,
-      candidateId,
+      candidateId: candidateObjectId,
       voterHash,
       timestamp: new Date(),
       blockchainHash: transactionHash
@@ -432,94 +501,42 @@ app.post("/api/vote", async (req, res) => {
     });
   } catch (error) {
     console.error("Error casting vote:", error);
+    console.error("Error stack:", error.stack);
     res.status(500).json({ message: "Server error while casting vote", error: error.message });
   }
 });
 
-// Get election results
+// Get election results (legacy endpoint - redirects to new endpoint)
 app.get("/api/results/:electionId", async (req, res) => {
   try {
     const { electionId } = req.params;
     
-    // In a real implementation, this would fetch results from the blockchain
-    // For blockchain integration, we would:
-    // 1. Call the smart contract function: getResults(uint electionId)
-    // 2. Parse the results and return them
-    
-    // Simulate blockchain interaction
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Return mock results based on election ID
-    let results;
-    if (electionId === "1") {
-      results = {
-        electionId,
-        title: "Local Council Elections",
-        date: "Nov 5, 2025",
-        totalVotes: 12540,
-        candidates: [
-          {
-            id: 1,
-            name: "Rajesh Kumar",
-            party: "Indian National Congress",
-            votes: Math.floor(Math.random() * 1000) + 5000,
-            percentage: 0
-          },
-          {
-            id: 2,
-            name: "Priya Sharma",
-            party: "Bharatiya Janata Party",
-            votes: Math.floor(Math.random() * 1000) + 4000,
-            percentage: 0
-          },
-          {
-            id: 3,
-            name: "Amit Patel",
-            party: "Aam Aadmi Party",
-            votes: Math.floor(Math.random() * 1000) + 3000,
-            percentage: 0
-          }
-        ]
-      };
-    } else if (electionId === "2") {
-      results = {
-        electionId,
-        title: "State Assembly Elections",
-        date: "Oct 20, 2025",
-        totalVotes: 87650,
-        candidates: [
-          {
-            id: 4,
-            name: "Sunita Verma",
-            party: "Indian National Congress",
-            votes: Math.floor(Math.random() * 1000) + 45000,
-            percentage: 0
-          },
-          {
-            id: 5,
-            name: "Vikram Singh",
-            party: "Bharatiya Janata Party",
-            votes: Math.floor(Math.random() * 1000) + 40000,
-            percentage: 0
-          }
-        ]
-      };
-    } else {
-      results = {
-        electionId,
-        title: "Unknown Election",
-        date: "Unknown",
-        totalVotes: 0,
-        candidates: []
-      };
+    // Find the election
+    const election = await Election.findById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: "Election not found" });
     }
     
-    // Calculate percentages
-    const totalVotes = results.candidates.reduce((sum, candidate) => sum + candidate.votes, 0);
-    results.candidates = results.candidates.map(candidate => ({
-      ...candidate,
-      percentage: totalVotes > 0 ? Math.round((candidate.votes / totalVotes) * 1000) / 10 : 0
-    }));
+    // Sort candidates by vote count
+    const sortedCandidates = [...election.candidates].sort((a, b) => b.voteCount - a.voteCount);
+    
+    // Calculate total votes
+    const totalVotes = sortedCandidates.reduce((sum, candidate) => sum + candidate.voteCount, 0);
+    
+    // Format results
+    const results = {
+      electionId: election._id.toString(),
+      title: election.title,
+      date: election.endDate.toLocaleDateString(),
+      totalVotes: totalVotes,
+      candidates: sortedCandidates.map((candidate, index) => ({
+        id: candidate._id.toString(),
+        name: candidate.name,
+        party: candidate.party,
+        votes: candidate.voteCount,
+        percentage: totalVotes > 0 ? Math.round((candidate.voteCount / totalVotes) * 1000) / 10 : 0
+      }))
+    };
     
     res.status(200).json({
       message: "Results retrieved successfully",
@@ -633,11 +650,15 @@ app.post("/api/admin/register", async (req, res) => {
       return res.status(400).json({ message: "Admin already exists with this email" });
     }
     
+    // Hash password using crypto (built-in Node.js module)
+    const salt = process.env.PASSWORD_SALT || 'default_salt';
+    const hashedPassword = crypto.createHash('sha256').update(password + salt).digest('hex');
+    
     // Create new admin
     const admin = new Admin({
       name,
       email,
-      password, // In a real implementation, this should be hashed
+      password: hashedPassword,
       organization,
       department,
     });
@@ -729,23 +750,39 @@ app.get("/api/admin/elections", async (req, res) => {
     // Fetch elections from the database
     const elections = await Election.find({}).sort({ createdAt: -1 });
     
-    res.status(200).json({
-      message: "Elections retrieved successfully",
-      elections: elections.map(election => ({
-        id: election._id,
+    const formattedElections = elections.map(election => {
+      const candidates = (election.candidates || []).map(candidate => ({
+        id: candidate._id ? candidate._id.toString() : null,
+        name: candidate.name || "",
+        party: candidate.party || "",
+        voteCount: candidate.voteCount || 0
+      }));
+      
+      console.log(`Election ${election._id} has ${candidates.length} candidates:`, candidates);
+      
+      return {
+        id: election._id.toString(),
         title: election.title,
         description: election.description,
         electionType: election.electionType,
         state: election.state,
-        district: election.district,
-        constituency: election.constituency,
-        startDate: election.startDate,
-        endDate: election.endDate,
+        district: election.district || "",
+        constituency: election.constituency || "",
+        startDate: election.startDate ? election.startDate.toISOString().split('T')[0] : null,
+        endDate: election.endDate ? election.endDate.toISOString().split('T')[0] : null,
         isActive: election.isActive,
         isCompleted: election.isCompleted,
+        candidates: candidates,
         createdAt: election.createdAt,
         updatedAt: election.updatedAt
-      }))
+      };
+    });
+    
+    console.log(`Returning ${formattedElections.length} elections with candidates`);
+    
+    res.status(200).json({
+      message: "Elections retrieved successfully",
+      elections: formattedElections
     });
   } catch (error) {
     console.error("Error getting elections:", error);
@@ -779,9 +816,27 @@ app.post("/api/admin/elections/:electionId/candidates", async (req, res) => {
     
     await election.addCandidate(newCandidate);
     
+    // Reload the election to get the candidate with its generated ID
+    const updatedElection = await Election.findById(electionId);
+    const addedCandidate = updatedElection.candidates[updatedElection.candidates.length - 1];
+    
     res.status(201).json({
       message: "Candidate added successfully",
-      candidate: newCandidate
+      candidate: {
+        id: addedCandidate._id.toString(),
+        name: addedCandidate.name,
+        party: addedCandidate.party,
+        voteCount: addedCandidate.voteCount
+      },
+      election: {
+        id: updatedElection._id.toString(),
+        candidates: updatedElection.candidates.map(c => ({
+          id: c._id.toString(),
+          name: c.name,
+          party: c.party,
+          voteCount: c.voteCount || 0
+        }))
+      }
     });
   } catch (error) {
     console.error("Error adding candidate:", error);
@@ -861,7 +916,7 @@ app.get("/api/elections/:electionId/results", async (req, res) => {
         isActive: election.isActive,
         isCompleted: election.isCompleted,
         candidates: sortedCandidates.map(candidate => ({
-          id: candidate._id,
+          id: candidate._id.toString(),
           name: candidate.name,
           party: candidate.party,
           voteCount: candidate.voteCount

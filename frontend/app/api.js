@@ -1,6 +1,7 @@
 // API utility functions for connecting to backend
 
-const API_BASE_URL = "http://localhost:5000/api";
+// Use environment variable for API base URL, fallback to localhost for development
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
 
 // Handle API errors
 const handleApiError = async (response) => {

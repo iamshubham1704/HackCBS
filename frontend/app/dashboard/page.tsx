@@ -48,8 +48,11 @@ export default function Dashboard() {
       // Decode voter ID to get location information
       const decodedInfo: any = decodeVoterId(voterId);
       
+      // Get API base URL from environment or use default
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+      
       // Fetch elections from the backend API
-      const response = await fetch("http://localhost:5000/api/elections/eligible", {
+      const response = await fetch(`${API_BASE_URL}/elections/eligible`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
