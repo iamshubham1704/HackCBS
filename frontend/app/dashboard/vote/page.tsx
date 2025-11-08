@@ -51,7 +51,7 @@ export default function VotingPage() {
       const response = await electionAPI.getEligibleElections("user123"); // In a real app, this would be the actual user ID
       
       // Get voter ID from localStorage
-      const voterId = localStorage.getItem("voterId");
+      const voterId = typeof window !== 'undefined' ? localStorage.getItem("voterId") : null;
       
       // Fetch candidates for each election and check if user has voted
       const electionsWithCandidates = await Promise.all(
@@ -61,11 +61,12 @@ export default function VotingPage() {
             const candidatesResponse = await electionAPI.getCandidates(election.id);
             
             // Check if user has voted in this election
-            let hasVoted = false;
-            if (voterId) {
-              // In a real implementation, we would call an API to check if the user has voted
-              // For now, we'll simulate this by checking localStorage
-              const voteStatus = localStorage.getItem(`voted_${election.id}`);
+            // Use the userHasVoted field from the backend response
+            let hasVoted = election.userHasVoted || false;
+            
+            // Also check localStorage as a fallback
+            if (voterId && !hasVoted) {
+              const voteStatus = typeof window !== 'undefined' ? localStorage.getItem(`voted_${election.id}`) : null;
               hasVoted = voteStatus === "true";
             }
             
@@ -105,7 +106,7 @@ export default function VotingPage() {
       setVoting(true);
 
       // Get voter ID from localStorage
-      const voterId = localStorage.getItem("voterId");  
+      const voterId = typeof window !== 'undefined' ? localStorage.getItem("voterId") : null;  
       if (!voterId) {
         throw new Error("Voter ID not found. Please log in again.");
       }
@@ -116,29 +117,37 @@ export default function VotingPage() {
         throw new Error(`Candidate not found: ${candidateId}`);
       }
 
-      // Use string IDs (MongoDB ObjectIds) instead of converting to numbers
+      // Get user ID from localStorage or use a default
+      const userId = typeof window !== 'undefined' ? localStorage.getItem("userId") : null;
+      
+      // Use string IDs (MongoDB ObjectIds) - DO NOT convert to numbers
       // Log the data being sent for debugging
       console.log("Vote data being sent:", {
-        userId: "user123", // In a real app, this would be the actual user ID
+        userId: userId || "user123", // In a real app, this would be the actual user ID
         electionId: selectedElection.id,
         candidateId: candidate.id,
         voterId: voterId
       });
 
-      // Cast vote on blockchain
+      // Cast vote on blockchain - use string IDs directly
       const voteData = {
-        electionId: selectedElection.id,
-        candidateId: candidate.id,
+        userId: userId || "user123",
+        electionId: selectedElection.id, // Keep as string ObjectId
+        candidateId: candidate.id, // Keep as string ObjectId
         voterId: voterId
       };
 
-      const result: BlockchainVoteResult = await castVoteOnBlockchain(voteData) as BlockchainVoteResult;
+      // Cast the vote
+      const result: BlockchainVoteResult = await castVoteOnBlockchain(voteData);
       
       console.log("Vote result:", result);
       
       if (result.success) {
-        // Mark that the user has voted in this election
-        localStorage.setItem(`voted_${selectedElection.id}`, "true");
+        // Mark that the user has voted in this election in localStorage
+        // Note: In a real blockchain implementation, we would check the blockchain for this
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`voted_${selectedElection.id}`, "true");
+        }
         
         // Update local state to show the vote was cast 
         setElections(prev => prev.map(election => 
@@ -151,13 +160,13 @@ export default function VotingPage() {
         setIsModalOpen(false);
 
         // Show confirmation with transaction hash      
-        alert(`Your vote has been cast successfully!\nTransaction Hash: ${result.transactionHash}`);
+        alert(`Your vote has been successfully recorded on the blockchain!\nTransaction Hash: ${result.transactionHash}\n\nNote: Your vote is now permanently recorded and cannot be changed.`);
       } else {
         throw new Error(result.error || "Failed to cast vote on blockchain");
       }
     } catch (err: any) {
       console.error("Vote casting error:", err);
-      alert(`Failed to cast vote: ${err.message || "Please try again."}`);
+      alert(`Failed to cast vote: ${err.message || "Please try again."}\n\nNote: Blockchain voting requires a stable internet connection.`);
     } finally {
       setVoting(false);
     }

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import VoterProfileCard from "@/components/VoterProfileCard";
 import ElectionCard from "@/components/ElectionCard";
-import { electionAPI } from "../api";
+import { electionAPI, votingHistoryAPI } from "../api";
 import Link from "next/link";
 import { decodeVoterId } from "@/app/utils/voterIdDecoder";
 
@@ -22,9 +22,21 @@ interface Election {
   startDate?: string; // Add startDate field
 }
 
+// Add interface for voting history
+interface VotingHistoryItem {
+  id: string;
+  electionId: string;
+  electionTitle: string;
+  electionType: string;
+  candidateId: string;
+  timestamp: string;
+  blockchainHash: string;
+}
+
 export default function Dashboard() {
   const [voterId, setVoterId] = useState<string | null>(null);
   const [elections, setElections] = useState<Election[]>([]);
+  const [votingHistory, setVotingHistory] = useState<VotingHistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -38,7 +50,33 @@ export default function Dashboard() {
     } else {
       setVoterId(storedVoterId);
       fetchEligibleElections(storedVoterId);
+      fetchVotingHistory(storedVoterId);
     }
+    
+    // Refresh elections when page becomes visible (e.g., after returning from vote page)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && storedVoterId) {
+        fetchEligibleElections(storedVoterId);
+        fetchVotingHistory(storedVoterId);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Also refresh on focus
+    const handleFocus = () => {
+      if (storedVoterId) {
+        fetchEligibleElections(storedVoterId);
+        fetchVotingHistory(storedVoterId);
+      }
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [router]);
 
   const fetchEligibleElections = async (voterId: string) => {
@@ -82,7 +120,7 @@ export default function Dashboard() {
         constituency: election.constituency || "",
         isActive: election.isActive,
         isCompleted: election.isCompleted,
-        userHasVoted: false // This would come from the backend in a real implementation
+        userHasVoted: election.userHasVoted || false // Use the value from backend
       }));
       
       setElections(elections);
@@ -90,6 +128,16 @@ export default function Dashboard() {
       setError(err.message || "Failed to fetch elections");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchVotingHistory = async (voterId: string) => {
+    try {
+      const history = await votingHistoryAPI.getVotingHistory(voterId);
+      setVotingHistory(history.votingHistory);
+    } catch (err: any) {
+      console.error("Error fetching voting history:", err);
+      // Don't set error state as this is supplementary data
     }
   };
 
@@ -106,68 +154,99 @@ export default function Dashboard() {
 
   // Sample stats data - in a real app, this would come from the backend
   const stats = {
-    totalVotesCast: elections.filter(e => e.userHasVoted).length,
+    totalVotesCast: votingHistory.length,
     upcomingEvents: elections.filter(e => !e.userHasVoted).length
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      <main className="pt-24 pb-12 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <main className="pt-20 pb-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          {/* Header Section */}
+          <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                Welcome Back
+              </h1>
+              <p className="text-gray-600">Manage your voting activities and stay updated</p>
+            </div>
             <button
               onClick={handleLogout}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+              className="px-6 py-2.5 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-medium shadow-lg hover:shadow-xl hover:from-red-600 hover:to-red-700 transition-all duration-200 transform hover:scale-105"
             >
               Logout
             </button>
           </div>
           
           {/* Navigation Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <Link href="/dashboard/vote" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition">
-              <div className="flex items-center">
-                <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
-                  <span className="text-indigo-600 text-xl">🗳️</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <Link 
+              href="/dashboard/vote" 
+              className="group bg-white rounded-2xl shadow-md hover:shadow-2xl p-6 transition-all duration-300 transform hover:-translate-y-1 border border-gray-100"
+            >
+              <div className="flex items-center mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <span className="text-white text-2xl">🗳️</span>
                 </div>
-                <h3 className="ml-4 font-semibold text-gray-800">Vote</h3>
+                <h3 className="ml-4 font-bold text-gray-800 text-lg">Vote</h3>
               </div>
-              <p className="mt-3 text-sm text-gray-600">Cast your vote in elections</p>
+              <p className="text-sm text-gray-600 group-hover:text-gray-800 transition-colors">Cast your vote in elections</p>
             </Link>
             
-            <Link href="/dashboard/results" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition">
-              <div className="flex items-center">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <span className="text-green-600 text-xl">📊</span>
+            <Link 
+              href="/dashboard/results" 
+              className="group bg-white rounded-2xl shadow-md hover:shadow-2xl p-6 transition-all duration-300 transform hover:-translate-y-1 border border-gray-100"
+            >
+              <div className="flex items-center mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <span className="text-white text-2xl">📊</span>
                 </div>
-                <h3 className="ml-4 font-semibold text-gray-800">Results</h3>
+                <h3 className="ml-4 font-bold text-gray-800 text-lg">Results</h3>
               </div>
-              <p className="mt-3 text-sm text-gray-600">View election results</p>
+              <p className="text-sm text-gray-600 group-hover:text-gray-800 transition-colors">View election results</p>
             </Link>
             
-            <Link href="/dashboard/kyc" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition">
-              <div className="flex items-center">
-                <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <span className="text-yellow-600 text-xl">🧾</span>
+            <Link 
+              href="/dashboard/kyc" 
+              className="group bg-white rounded-2xl shadow-md hover:shadow-2xl p-6 transition-all duration-300 transform hover:-translate-y-1 border border-gray-100"
+            >
+              <div className="flex items-center mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <span className="text-white text-2xl">🧾</span>
                 </div>
-                <h3 className="ml-4 font-semibold text-gray-800">KYC Status</h3>
+                <h3 className="ml-4 font-bold text-gray-800 text-lg">KYC Status</h3>
               </div>
-              <p className="mt-3 text-sm text-gray-600">Check verification progress</p>
+              <p className="text-sm text-gray-600 group-hover:text-gray-800 transition-colors">Check verification progress</p>
             </Link>
             
-            <Link href="/dashboard/profile" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition">
-              <div className="flex items-center">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <span className="text-blue-600 text-xl">👤</span>
+            <Link 
+              href="/dashboard/profile" 
+              className="group bg-white rounded-2xl shadow-md hover:shadow-2xl p-6 transition-all duration-300 transform hover:-translate-y-1 border border-gray-100"
+            >
+              <div className="flex items-center mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <span className="text-white text-2xl">👤</span>
                 </div>
-                <h3 className="ml-4 font-semibold text-gray-800">Profile</h3>
+                <h3 className="ml-4 font-bold text-gray-800 text-lg">Profile</h3>
               </div>
-              <p className="mt-3 text-sm text-gray-600">View your profile</p>
+              <p className="text-sm text-gray-600 group-hover:text-gray-800 transition-colors">View your profile</p>
+            </Link>
+            
+            <Link 
+              href="/dashboard/history" 
+              className="group bg-white rounded-2xl shadow-md hover:shadow-2xl p-6 transition-all duration-300 transform hover:-translate-y-1 border border-gray-100"
+            >
+              <div className="flex items-center mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <span className="text-white text-2xl">📜</span>
+                </div>
+                <h3 className="ml-4 font-bold text-gray-800 text-lg">History</h3>
+              </div>
+              <p className="text-sm text-gray-600 group-hover:text-gray-800 transition-colors">View voting history</p>
             </Link>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             {/* Voter Profile Card */}
             <div className="lg:col-span-1">
               <VoterProfileCard 
@@ -178,33 +257,63 @@ export default function Dashboard() {
             </div>
             
             {/* Stats and Quick Info */}
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">Quick Stats</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
-                    <div className="text-3xl font-bold text-indigo-700 mb-2">{stats.totalVotesCast}</div>
-                    <div className="text-indigo-600 font-medium">Total Votes Cast</div>
+            <div className="lg:col-span-2 space-y-6">
+              {/* Quick Stats */}
+              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800">Quick Stats</h2>
+                  <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <span className="text-indigo-600 text-xl">📈</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl p-6 border border-indigo-200 hover:shadow-lg transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-4xl font-bold text-indigo-700">{stats.totalVotesCast}</div>
+                      <div className="w-12 h-12 bg-indigo-200 rounded-lg flex items-center justify-center">
+                        <span className="text-indigo-600 text-xl">✓</span>
+                      </div>
+                    </div>
+                    <div className="text-indigo-700 font-semibold">Total Votes Cast</div>
+                    <div className="text-xs text-indigo-600 mt-1">Your voting participation</div>
                   </div>
                   
-                  <div className="bg-green-50 rounded-xl p-5 border border-green-100">
-                    <div className="text-3xl font-bold text-green-700 mb-2">{stats.upcomingEvents}</div>
-                    <div className="text-green-600 font-medium">Upcoming Events</div>
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-6 border border-green-200 hover:shadow-lg transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-4xl font-bold text-green-700">{stats.upcomingEvents}</div>
+                      <div className="w-12 h-12 bg-green-200 rounded-lg flex items-center justify-center">
+                        <span className="text-green-600 text-xl">📅</span>
+                      </div>
+                    </div>
+                    <div className="text-green-700 font-semibold">Upcoming Events</div>
+                    <div className="text-xs text-green-600 mt-1">Elections you can vote in</div>
                   </div>
                 </div>
               </div>
               
               {/* Ongoing Elections Summary */}
-              <div className="bg-white rounded-2xl shadow-lg p-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">Ongoing Elections</h2>
+              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800">Ongoing Elections</h2>
+                  <div className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold">
+                    {elections.filter(election => !election.userHasVoted && election.isActive).length} Active
+                  </div>
+                </div>
                 {loading ? (
-                  <div className="text-center py-8 text-gray-500">Loading elections...</div>
+                  <div className="text-center py-12">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
+                    <div className="text-gray-500">Loading elections...</div>
+                  </div>
                 ) : error ? (
-                  <div className="text-center py-8 text-red-500">Error: {error}</div>
+                  <div className="text-center py-12 bg-red-50 rounded-xl border border-red-200">
+                    <div className="text-red-500 text-xl mb-2">⚠️</div>
+                    <div className="text-red-600 font-semibold">Error loading elections</div>
+                    <div className="text-red-500 text-sm mt-1">{error}</div>
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     {elections
-                      .filter(election => !election.userHasVoted)
+                      .filter(election => !election.userHasVoted && election.isActive)
                       .map(election => (
                         <ElectionCard
                           key={election.id}
@@ -217,25 +326,44 @@ export default function Dashboard() {
                         />
                       ))}
                     
-                    {elections.filter(election => !election.userHasVoted).length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        No ongoing elections at the moment
+                    {elections.filter(election => !election.userHasVoted && election.isActive).length === 0 && (
+                      <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
+                        <div className="text-4xl mb-3">🗳️</div>
+                        <div className="text-gray-600 font-medium">No ongoing elections at the moment</div>
+                        <div className="text-gray-500 text-sm mt-1">Check back later for new elections</div>
                       </div>
                     )}
                   </div>
                 )}
               </div>
-
             </div>
           </div>
           
           {/* All Elections */}
-          <div className="bg-white rounded-2xl shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">All Elections</h2>
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">All Elections</h2>
+              <div className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold">
+                {elections.length} Total
+              </div>
+            </div>
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading elections...</div>
+              <div className="text-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
+                <div className="text-gray-500">Loading elections...</div>
+              </div>
             ) : error ? (
-              <div className="text-center py-8 text-red-500">Error: {error}</div>
+              <div className="text-center py-12 bg-red-50 rounded-xl border border-red-200">
+                <div className="text-red-500 text-xl mb-2">⚠️</div>
+                <div className="text-red-600 font-semibold">Error loading elections</div>
+                <div className="text-red-500 text-sm mt-1">{error}</div>
+              </div>
+            ) : elections.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="text-4xl mb-3">📋</div>
+                <div className="text-gray-600 font-medium">No elections found</div>
+                <div className="text-gray-500 text-sm mt-1">Elections will appear here when available</div>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {elections.map(election => (
@@ -248,7 +376,6 @@ export default function Dashboard() {
                     userVoteStatus={election.userHasVoted ? "voted" : "not-voted"}
                     electionId={election.id}
                   />
-
                 ))}
               </div>
             )}

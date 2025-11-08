@@ -18,6 +18,8 @@ const handleApiError = async (response) => {
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
+  
   const config = {
     headers: {
       "Content-Type": "application/json",
@@ -26,13 +28,20 @@ const apiRequest = async (endpoint, options = {}) => {
     ...options,
   };
 
-  const response = await fetch(url, config);
-  
-  if (!response.ok) {
-    await handleApiError(response);
+  try {
+    const response = await fetch(url, config);
+    
+    console.log(`📥 API Response: ${response.status} ${response.statusText} for ${url}`);
+    
+    if (!response.ok) {
+      await handleApiError(response);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error(`❌ API Request failed for ${url}:`, error);
+    throw error;
   }
-  
-  return response.json();
 };
 
 // Login API function
@@ -44,6 +53,18 @@ export const loginAPI = {
       body: JSON.stringify({ voterId }),
     });
   }
+};
+
+// Vote Bank API functions
+export const voteBankAPI = {
+  // Get all votes (vote bank) for an election
+  getVoteBank: async (electionId) => apiRequest(`/elections/${electionId}/votes`),
+  
+  // Verify a specific vote
+  verifyVote: async (electionId, voterId) => apiRequest(`/elections/${electionId}/votes/verify/${voterId}`),
+  
+  // Get vote statistics
+  getVoteStats: async (electionId) => apiRequest(`/elections/${electionId}/votes/stats`),
 };
 
 // Election API functions
@@ -98,6 +119,14 @@ export const profileAPI = {
   // Get user profile
   getProfile: async (voterId) => {
     return apiRequest(`/profile/${voterId}`);
+  }
+};
+
+// Voting History API functions
+export const votingHistoryAPI = {
+  // Get user's voting history
+  getVotingHistory: async (voterId) => {
+    return apiRequest(`/voters/${voterId}/history`);
   }
 };
 
@@ -174,4 +203,4 @@ export const registerAPI = {
   },
 };
 
-export default { loginAPI, electionAPI, voteAPI, kycAPI, profileAPI, adminAPI, registerAPI };
+export default { loginAPI, electionAPI, voteAPI, kycAPI, profileAPI, adminAPI, registerAPI, votingHistoryAPI };

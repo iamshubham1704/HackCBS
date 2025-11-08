@@ -17,10 +17,15 @@ export default function LoginPage() {
 
     try {
       // Validate the voter ID
-      await loginAPI.validateVoterId(voterId);
+      const response = await loginAPI.validateVoterId(voterId);
       
       // Store voter ID in localStorage for session management
       localStorage.setItem("voterId", voterId);
+      
+      // Store user ID if available in response
+      if (response.user && response.user.id) {
+        localStorage.setItem("userId", response.user.id);
+      }
       
       // Redirect to dashboard
       router.push("/dashboard");

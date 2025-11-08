@@ -25,6 +25,8 @@ type FormState = {
   isSameAsPermanent: boolean;
   addressProofType: string;
   occupation: string;
+  district: string;
+  constituency: string;
 };
 
 export default function RegisterPage() {
@@ -55,6 +57,8 @@ export default function RegisterPage() {
     isSameAsPermanent: false,
     addressProofType: "",
     occupation: "",
+    district: "",
+    constituency: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -462,6 +466,49 @@ export default function RegisterPage() {
                 <p className="text-sm text-slate-400 mt-2">
                   Note: You'll be asked to upload the document in the next steps.
                 </p>
+              </div>
+
+              {/* District and Constituency Section */}
+              <div className="border border-slate-700 rounded-xl p-6 bg-slate-800/50">
+                <h2 className="text-xl font-semibold text-white mb-4">Electoral Information</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <label className="flex flex-col">
+                    <span className="text-sm text-slate-300 font-medium mb-2">
+                      District *
+                    </span>
+                    <input
+                      name="district"
+                      value={formData.district}
+                      onChange={handleChange}
+                      required
+                      aria-label="District"
+                      className="px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                      placeholder="e.g., Mumbai"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      District where you are registered to vote
+                    </p>
+                  </label>
+
+                  <label className="flex flex-col">
+                    <span className="text-sm text-slate-300 font-medium mb-2">
+                      Constituency *
+                    </span>
+                    <input
+                      name="constituency"
+                      value={formData.constituency}
+                      onChange={handleChange}
+                      required
+                      aria-label="Constituency"
+                      className="px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                      placeholder="e.g., Mumbai South"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Your electoral constituency
+                    </p>
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

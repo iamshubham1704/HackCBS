@@ -79,9 +79,9 @@ export async function castVoteOnBlockchain(voteData) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        userId: "user123", // In a real app, this would be the actual user ID
-        electionId,
-        candidateId,
+        userId: voteData.userId || "user123", // Use userId from voteData if provided
+        electionId, // Keep as string ObjectId
+        candidateId, // Keep as string ObjectId
         voterId
       }),
     });
@@ -136,8 +136,26 @@ export async function fetchResultsFromBlockchain(electionId) {
     // Get API base URL from environment or use default
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
     
-    // In a real implementation, this would call the smart contract
-    // For now, we'll make an API call to our backend which handles blockchain interaction
+    // First try to fetch from the live results endpoint
+    try {
+      const liveResponse = await fetch(`${API_BASE_URL}/elections/${electionId}/results/live`);
+      
+      if (liveResponse.ok) {
+        const liveData = await liveResponse.json();
+        return {
+          candidates: liveData.results.candidates.map(candidate => ({
+            id: candidate.id,
+            name: candidate.name,
+            voteCount: candidate.voteCount,
+            party: candidate.party
+          }))
+        };
+      }
+    } catch (liveError) {
+      console.log("Live results endpoint not available, falling back to legacy endpoint");
+    }
+    
+    // Fall back to the legacy results endpoint
     const response = await fetch(`${API_BASE_URL}/elections/${electionId}/results`);
     
     if (!response.ok) {
@@ -153,7 +171,8 @@ export async function fetchResultsFromBlockchain(electionId) {
         candidates: result.election.candidates.map(candidate => ({
           id: candidate.id,
           name: candidate.name,
-          voteCount: candidate.voteCount
+          voteCount: candidate.voteCount,
+          party: candidate.party
         }))
       };
     }
@@ -164,7 +183,8 @@ export async function fetchResultsFromBlockchain(electionId) {
         candidates: result.results.candidates.map(candidate => ({
           id: candidate.id,
           name: candidate.name,
-          voteCount: candidate.votes || candidate.voteCount
+          voteCount: candidate.votes || candidate.voteCount,
+          party: candidate.party
         }))
       };
     }

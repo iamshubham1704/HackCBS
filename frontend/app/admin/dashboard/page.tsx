@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { adminAPI } from "@/app/api";
-import { Plus, X, Trash2, Edit, CheckCircle, Clock, AlertCircle, Users, Calendar, MapPin } from "lucide-react";
+import { Plus, X, Trash2, Edit, CheckCircle, Clock, AlertCircle, Users, Calendar, MapPin, Database } from "lucide-react";
 
 interface ElectionForm {
   title: string;
@@ -78,15 +79,12 @@ export default function AdminDashboard() {
       setLoading(true);
       setError(null);
       const response = await adminAPI.getElections();
-      console.log("Raw API response:", response);
       
       const electionsData = response.elections || [];
-      console.log("Elections data:", electionsData);
       
       // Ensure candidates array exists and is properly formatted
       const formattedElections = electionsData.map((election: any) => {
         const candidates = Array.isArray(election.candidates) ? election.candidates : [];
-        console.log(`Election ${election.id} has ${candidates.length} candidates:`, candidates);
         
         return {
           ...election,
@@ -101,7 +99,6 @@ export default function AdminDashboard() {
         };
       });
       
-      console.log("Formatted elections:", formattedElections);
       setElections(formattedElections);
     } catch (err: any) {
       console.error("Error fetching elections:", err);
@@ -161,11 +158,7 @@ export default function AdminDashboard() {
       });
       
       // Update the specific election in state immediately
-      console.log("Candidate add response:", response);
-      
       if (response.election && response.election.candidates) {
-        console.log("Updating election with candidates:", response.election.candidates);
-        
         setElections(prevElections => {
           const updated = prevElections.map(election => {
             if (election.id === candidateData.electionId) {
@@ -178,19 +171,15 @@ export default function AdminDashboard() {
                   voteCount: c.voteCount || 0
                 }))
               };
-              console.log("Updated election:", updatedElection);
               return updatedElection;
             }
             return election;
           });
-          console.log("All elections after update:", updated);
           return updated;
         });
         
         // Ensure the election is expanded to show the new candidate
         setExpandedElections(prev => new Set(prev).add(candidateData.electionId));
-      } else {
-        console.warn("Response does not contain election data:", response);
       }
       
       setShowCandidateForm(false);
@@ -310,7 +299,7 @@ export default function AdminDashboard() {
     );
   }
 
-  return (
+    return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <main className="pt-20 pb-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -321,15 +310,15 @@ export default function AdminDashboard() {
                 <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
                 <p className="text-gray-600 mt-1">Manage elections and candidates</p>
               </div>
-              <button
+          <button 
                 onClick={handleLogout}
                 className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition shadow-sm"
-              >
+          >
                 <X className="w-4 h-4 mr-2" />
                 Logout
-              </button>
-            </div>
-          </div>
+          </button>
+        </div>
+      </div>
 
           {/* Success/Error Messages */}
           {successMessage && (
@@ -352,9 +341,28 @@ export default function AdminDashboard() {
               </span>
               <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
                 <X className="w-4 h-4" />
-              </button>
-            </div>
+            </button>
+          </div>
           )}
+
+          {/* Admin Navigation */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/admin/dashboard"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium"
+              >
+                Elections
+              </Link>
+              <Link
+                href="/dashboard/vote-bank"
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition text-sm font-medium flex items-center gap-2"
+              >
+                <Database className="w-4 h-4" />
+                Vote Bank
+              </Link>
+            </div>
+          </div>
 
           {/* Create Election Section */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
@@ -560,7 +568,7 @@ export default function AdminDashboard() {
                             )}
                           </span>
                         </div>
-                      </div>
+                        </div>
                       <div className="flex items-center gap-2 ml-4">
                         <button
                           onClick={(e) => {
@@ -584,9 +592,9 @@ export default function AdminDashboard() {
                           </button>
                         )}
                       </div>
-                    </div>
-                  </div>
-
+            </div>
+          </div>
+          
                   {/* Candidates Section (Expandable) */}
                   {expandedElections.has(election.id) && (
                     <div className="border-t border-gray-200 bg-gray-50 p-6">
@@ -605,64 +613,64 @@ export default function AdminDashboard() {
                             <X className="w-5 h-5" />
                           </button>
                         )}
-                      </div>
-
+                  </div>
+                  
                       {/* Add Candidate Form */}
                       {showCandidateForm && candidateData.electionId === election.id && (
                         <form onSubmit={handleCandidateSubmit} className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Candidate Name *
-                              </label>
-                              <input
-                                type="text"
-                                name="name"
-                                value={candidateData.name}
-                                onChange={handleCandidateInputChange}
-                                required
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                placeholder="e.g., Rajesh Kumar"
-                              />
-                            </div>
-                            
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Party *
-                              </label>
-                              <input
-                                type="text"
-                                name="party"
-                                value={candidateData.party}
-                                onChange={handleCandidateInputChange}
-                                required
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                placeholder="e.g., Bharatiya Janata Party"
-                              />
-                            </div>
-                          </div>
-                          
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Candidate Name *
+                    </label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={candidateData.name}
+                      onChange={handleCandidateInputChange}
+                      required
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="e.g., Rajesh Kumar"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Party *
+                    </label>
+                    <input
+                      type="text"
+                      name="party"
+                      value={candidateData.party}
+                      onChange={handleCandidateInputChange}
+                      required
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="e.g., Bharatiya Janata Party"
+                    />
+                  </div>
+                </div>
+                
                           <div className="mt-4 flex justify-end space-x-3">
-                            <button
-                              type="button"
+                  <button
+                    type="button"
                               onClick={() => {
                                 setShowCandidateForm(false);
                                 setCandidateData({ name: "", party: "", electionId: "" });
                               }}
                               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="submit"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
                               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-                            >
-                              Add Candidate
-                            </button>
-                          </div>
-                        </form>
-                      )}
-
+                  >
+                    Add Candidate
+                  </button>
+                </div>
+              </form>
+            )}
+            
                       {/* Debug Info */}
                       <div className="mb-4 text-xs text-gray-500">
                         Debug: candidates array type: {Array.isArray(election.candidates) ? 'array' : typeof election.candidates}, 
@@ -674,22 +682,26 @@ export default function AdminDashboard() {
                         const candidates = Array.isArray(election.candidates) ? election.candidates : [];
                         const hasCandidates = candidates.length > 0;
                         
-                        console.log(`Rendering candidates for election ${election.id}:`, {
-                          candidates,
-                          hasCandidates,
-                          count: candidates.length,
-                          electionData: election
-                        });
-                        
                         if (!hasCandidates) {
-                          console.log(`No candidates found for election ${election.id}`);
+                          return (
+                            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+                              <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                              <p className="text-gray-500 text-sm">No candidates added yet.</p>
+                              <button
+                                onClick={() => handleAddCandidateClick(election.id)}
+                                className="mt-3 text-indigo-600 hover:text-indigo-700 text-sm font-medium"
+                              >
+                                Add your first candidate
+                              </button>
+                            </div>
+                          );
                         }
                         
-                        return hasCandidates ? (
+                        return (
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {candidates.map((candidate: Candidate, index: number) => {
-                              const candidateId = candidate.id || candidate._id?.toString() || `candidate-${index}`;
-                              console.log(`Rendering candidate ${index}:`, candidate);
+                              // Ensure we have a valid ID for the candidate
+                              const candidateId = candidate.id || `candidate-${index}`;
                               
                               return (
                                 <div key={candidateId} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition">
@@ -713,17 +725,6 @@ export default function AdminDashboard() {
                                 </div>
                               );
                             })}
-                          </div>
-                        ) : (
-                          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-                            <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                            <p className="text-gray-500 text-sm">No candidates added yet.</p>
-                            <button
-                              onClick={() => handleAddCandidateClick(election.id)}
-                              className="mt-3 text-indigo-600 hover:text-indigo-700 text-sm font-medium"
-                            >
-                              Add your first candidate
-                            </button>
                           </div>
                         );
                       })()}
