@@ -46,7 +46,15 @@ electionSchema.methods.addCandidate = function(candidateData) {
 
 // Method to remove a candidate
 electionSchema.methods.removeCandidate = function(candidateId) {
-  this.candidates = this.candidates.filter(candidate => candidate._id.toString() !== candidateId);
+  // Try to match by _id first, then by string comparison
+  this.candidates = this.candidates.filter(candidate => {
+    // If candidate has an _id, compare with that
+    if (candidate._id) {
+      return candidate._id.toString() !== candidateId;
+    }
+    // Otherwise, we can't match this candidate
+    return true;
+  });
   return this.save();
 };
 

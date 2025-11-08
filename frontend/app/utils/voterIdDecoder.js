@@ -67,7 +67,7 @@ const districtCodes = {
     Nashik: "07",
     Aurangabad: "08",
   },
-  UttarPradesh: {
+  "Uttar Pradesh": {
     Lucknow: "11",
     Kanpur: "12",
     Varanasi: "13",

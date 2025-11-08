@@ -50,20 +50,37 @@ export default function VotingPage() {
       // Fetch elections from the backend
       const response = await electionAPI.getEligibleElections("user123"); // In a real app, this would be the actual user ID
       
-      // Fetch candidates for each election
+      // Get voter ID from localStorage
+      const voterId = typeof window !== 'undefined' ? localStorage.getItem("voterId") : null;
+      
+      // Fetch candidates for each election and check if user has voted
       const electionsWithCandidates = await Promise.all(
         response.elections.map(async (election: any) => {
           try {
+            // Fetch candidates
             const candidatesResponse = await electionAPI.getCandidates(election.id);
+            
+            // Check if user has voted in this election
+            // Use the userHasVoted field from the backend response
+            let hasVoted = election.userHasVoted || false;
+            
+            // Also check localStorage as a fallback
+            if (voterId && !hasVoted) {
+              const voteStatus = typeof window !== 'undefined' ? localStorage.getItem(`voted_${election.id}`) : null;
+              hasVoted = voteStatus === "true";
+            }
+            
             return {
               ...election,
-              candidates: candidatesResponse.candidates || []
+              candidates: candidatesResponse.candidates || [],
+              hasVoted: hasVoted
             };
           } catch (error) {
             console.error(`Error fetching candidates for election ${election.id}:`, error);
             return {
               ...election,
-              candidates: []
+              candidates: [],
+              hasVoted: false
             };
           }
         })
@@ -89,48 +106,49 @@ export default function VotingPage() {
       setVoting(true);
 
       // Get voter ID from localStorage
-      const voterId = localStorage.getItem("voterId");  
+      const voterId = typeof window !== 'undefined' ? localStorage.getItem("voterId") : null;  
       if (!voterId) {
         throw new Error("Voter ID not found. Please log in again.");
       }
 
-      // Validate candidateId - if it's not a number, we need to extract the numeric part
-      let numericCandidateId: number;
-      if (/^c\d+$/.test(candidateId)) {
-        // If it's in the format "c1", "c2", etc., extract the number
-        numericCandidateId = parseInt(candidateId.substring(1));
-      } else if (!isNaN(parseInt(candidateId))) {
-        // If it's already a number string
-        numericCandidateId = parseInt(candidateId);
-      } else {
-        // If we can't parse it, throw an error
-        throw new Error(`Invalid candidate ID format: ${candidateId}`);
+      // Find the candidate by ID
+      const candidate = selectedElection.candidates.find(c => c.id === candidateId);
+      if (!candidate) {
+        throw new Error(`Candidate not found: ${candidateId}`);
       }
 
-      // Validate electionId
-      const numericElectionId = parseInt(selectedElection.id);
-      if (isNaN(numericElectionId)) {
-        throw new Error(`Invalid election ID format: ${selectedElection.id}`);
-      }
-
+      // Get user ID from localStorage or use a default
+      const userId = typeof window !== 'undefined' ? localStorage.getItem("userId") : null;
+      
+      // Use string IDs (MongoDB ObjectIds) - DO NOT convert to numbers
       // Log the data being sent for debugging
       console.log("Vote data being sent:", {
-        userId: "user123", // In a real app, this would be the actual user ID
-        electionId: numericElectionId,
-        candidateId: numericCandidateId,
+        userId: userId || "user123", // In a real app, this would be the actual user ID
+        electionId: selectedElection.id,
+        candidateId: candidate.id,
         voterId: voterId
       });
 
-      // Cast vote on blockchain
+      // Cast vote on blockchain - use string IDs directly
       const voteData = {
-        electionId: numericElectionId,
-        candidateId: numericCandidateId,
+        userId: userId || "user123",
+        electionId: selectedElection.id, // Keep as string ObjectId
+        candidateId: candidate.id, // Keep as string ObjectId
         voterId: voterId
       };
 
-      const result: BlockchainVoteResult = await castVoteOnBlockchain(voteData) as BlockchainVoteResult;
+      // Cast the vote (function accepts strings but JSDoc says numbers - using type assertion)
+      const result = await castVoteOnBlockchain(voteData as any) as BlockchainVoteResult;
+      
+      console.log("Vote result:", result);
       
       if (result.success) {
+        // Mark that the user has voted in this election in localStorage
+        // Note: In a real blockchain implementation, we would check the blockchain for this
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`voted_${selectedElection.id}`, "true");
+        }
+        
         // Update local state to show the vote was cast 
         setElections(prev => prev.map(election => 
           election.id === selectedElection.id
@@ -146,14 +164,19 @@ export default function VotingPage() {
         // Close modal
         setIsModalOpen(false);
 
+
         // Navigate to badge page
         router.push(`/badge?voted=true&election=${encodeURIComponent(selectedElection.title)}&tx=${result.transactionHash}`);
+
+        // Show confirmation with transaction hash      
+        alert(`Your vote has been successfully recorded on the blockchain!\nTransaction Hash: ${result.transactionHash}\n\nNote: Your vote is now permanently recorded and cannot be changed.`);
+
       } else {
         throw new Error(result.error || "Failed to cast vote on blockchain");
       }
     } catch (err: any) {
       console.error("Vote casting error:", err);
-      alert(`Failed to cast vote: ${err.message || "Please try again."}`);
+      alert(`Failed to cast vote: ${err.message || "Please try again."}\n\nNote: Blockchain voting requires a stable internet connection.`);
     } finally {
       setVoting(false);
     }

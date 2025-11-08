@@ -48,6 +48,8 @@ const kycSchema = new mongoose.Schema(
       default: "pending",
     },
     remarks: { type: String },
+    district: { type: String },
+    constituency: { type: String },
   },
   { timestamps: true }
 );

@@ -1,7 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { adminAPI } from "@/app/api";
+import { Plus, X, Trash2, Edit, CheckCircle, Clock, AlertCircle, Users, Calendar, MapPin, Database } from "lucide-react";
 
 interface ElectionForm {
   title: string;
@@ -49,6 +51,7 @@ export default function AdminDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [showCandidateForm, setShowCandidateForm] = useState(false);
   const [selectedElectionId, setSelectedElectionId] = useState<string>("");
+  const [expandedElections, setExpandedElections] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState<ElectionForm>({
     title: "",
     description: "",
@@ -64,6 +67,7 @@ export default function AdminDashboard() {
     party: "",
     electionId: ""
   });
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -73,9 +77,31 @@ export default function AdminDashboard() {
   const fetchElections = async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await adminAPI.getElections();
-      setElections(response.elections || []);
+      
+      const electionsData = response.elections || [];
+      
+      // Ensure candidates array exists and is properly formatted
+      const formattedElections = electionsData.map((election: any) => {
+        const candidates = Array.isArray(election.candidates) ? election.candidates : [];
+        
+        return {
+          ...election,
+          candidates: candidates.map((c: any) => ({
+            id: c.id || c._id?.toString() || `temp-${Date.now()}`,
+            name: c.name || "",
+            party: c.party || "",
+            voteCount: c.voteCount || 0
+          })),
+          startDate: election.startDate || "",
+          endDate: election.endDate || ""
+        };
+      });
+      
+      setElections(formattedElections);
     } catch (err: any) {
+      console.error("Error fetching elections:", err);
       setError(err.message || "Failed to fetch elections");
     } finally {
       setLoading(false);
@@ -115,12 +141,10 @@ export default function AdminDashboard() {
         endDate: ""
       });
       
-      // Refresh elections list
       fetchElections();
-      
-      alert("Election created successfully!");
+      showSuccess("Election created successfully!");
     } catch (err: any) {
-      alert("Failed to create election: " + (err.message || "Please try again"));
+      showError("Failed to create election: " + (err.message || "Please try again"));
     }
   };
 
@@ -128,10 +152,35 @@ export default function AdminDashboard() {
     e.preventDefault();
     
     try {
-      await adminAPI.addCandidate(candidateData.electionId, {
+      const response = await adminAPI.addCandidate(candidateData.electionId, {
         name: candidateData.name,
         party: candidateData.party
       });
+      
+      // Update the specific election in state immediately
+      if (response.election && response.election.candidates) {
+        setElections(prevElections => {
+          const updated = prevElections.map(election => {
+            if (election.id === candidateData.electionId) {
+              const updatedElection = {
+                ...election,
+                candidates: response.election.candidates.map((c: any) => ({
+                  id: c.id || c._id?.toString() || `temp-${Date.now()}`,
+                  name: c.name || "",
+                  party: c.party || "",
+                  voteCount: c.voteCount || 0
+                }))
+              };
+              return updatedElection;
+            }
+            return election;
+          });
+          return updated;
+        });
+        
+        // Ensure the election is expanded to show the new candidate
+        setExpandedElections(prev => new Set(prev).add(candidateData.electionId));
+      }
       
       setShowCandidateForm(false);
       setCandidateData({
@@ -140,49 +189,108 @@ export default function AdminDashboard() {
         electionId: ""
       });
       
-      // Refresh elections list
-      fetchElections();
+      // Also refresh all elections to ensure consistency
+      setTimeout(() => {
+        fetchElections();
+      }, 500);
       
-      alert("Candidate added successfully!");
+      showSuccess("Candidate added successfully!");
     } catch (err: any) {
-      alert("Failed to add candidate: " + (err.message || "Please try again"));
+      console.error("Error adding candidate:", err);
+      showError("Failed to add candidate: " + (err.message || "Please try again"));
     }
   };
 
   const handleRemoveCandidate = async (electionId: string, candidateId: string) => {
+    if (!confirm("Are you sure you want to remove this candidate?")) {
+      return;
+    }
+    
     try {
       await adminAPI.removeCandidate(electionId, candidateId);
-      
-      // Refresh elections list
       fetchElections();
-      
-      alert("Candidate removed successfully!");
+      showSuccess("Candidate removed successfully!");
     } catch (err: any) {
-      alert("Failed to remove candidate: " + (err.message || "Please try again"));
+      showError("Failed to remove candidate: " + (err.message || "Please try again"));
     }
   };
 
   const handleLogout = () => {
-    // In a real implementation, this would clear admin session
     router.push("/");
   };
 
   const endElection = async (electionId: string) => {
+    if (!confirm("Are you sure you want to end this election? This action cannot be undone.")) {
+      return;
+    }
+    
     try {
       await adminAPI.endElection(electionId);
-      
-      // Refresh elections list
       fetchElections();
-      
-      alert("Election ended successfully!");
+      showSuccess("Election ended successfully!");
     } catch (err: any) {
-      alert("Failed to end election: " + (err.message || "Please try again"));
+      showError("Failed to end election: " + (err.message || "Please try again"));
+    }
+  };
+
+  const toggleElectionExpand = (electionId: string) => {
+    setExpandedElections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(electionId)) {
+        newSet.delete(electionId);
+      } else {
+        newSet.add(electionId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleAddCandidateClick = (electionId: string) => {
+    setSelectedElectionId(electionId);
+    setCandidateData(prev => ({ ...prev, electionId }));
+    setShowCandidateForm(true);
+    // Expand the election to show candidates
+    setExpandedElections(prev => new Set(prev).add(electionId));
+  };
+
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  const showError = (message: string) => {
+    setError(message);
+    setTimeout(() => setError(null), 5000);
+  };
+
+  const getStatusBadge = (election: Election) => {
+    if (election.isCompleted) {
+      return (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Completed
+        </span>
+      );
+    } else if (election.isActive) {
+      return (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+          <Clock className="w-3 h-3 mr-1" />
+          Active
+        </span>
+      );
+    } else {
+      return (
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Inactive
+        </span>
+      );
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading elections...</p>
@@ -191,50 +299,100 @@ export default function AdminDashboard() {
     );
   }
 
-  if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 text-xl font-bold mb-2">Error</div>
-          <p className="text-gray-600">{error}</p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <main className="pt-20 pb-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+                <p className="text-gray-600 mt-1">Manage elections and candidates</p>
+              </div>
           <button 
-            onClick={fetchElections}
-            className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                onClick={handleLogout}
+                className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition shadow-sm"
           >
-            Retry
+                <X className="w-4 h-4 mr-2" />
+                Logout
           </button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <main className="pt-24 pb-12 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
-            >
-              Logout
+          {/* Success/Error Messages */}
+          {successMessage && (
+            <div className="mb-6 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center justify-between">
+              <span className="flex items-center">
+                <CheckCircle className="w-5 h-5 mr-2" />
+                {successMessage}
+              </span>
+              <button onClick={() => setSuccessMessage(null)} className="text-green-600 hover:text-green-800">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-6 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-center justify-between">
+              <span className="flex items-center">
+                <AlertCircle className="w-5 h-5 mr-2" />
+                {error}
+              </span>
+              <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+                <X className="w-4 h-4" />
             </button>
           </div>
-          
-          <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-800">Manage Elections</h2>
-              <button
-                onClick={() => setShowForm(!showForm)}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
+          )}
+
+          {/* Admin Navigation */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/admin/dashboard"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium"
               >
+                Elections
+              </Link>
+              <Link
+                href="/dashboard/vote-bank"
+                className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition text-sm font-medium flex items-center gap-2"
+              >
+                <Database className="w-4 h-4" />
+                Vote Bank
+              </Link>
+            </div>
+          </div>
+
+          {/* Create Election Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-900">Elections</h2>
+              <button
+                onClick={() => {
+                  setShowForm(!showForm);
+                  if (showForm) {
+                    setFormData({
+                      title: "",
+                      description: "",
+                      electionType: "lok-sabha",
+                      state: "",
+                      district: "",
+                      constituency: "",
+                      startDate: "",
+                      endDate: ""
+                    });
+                  }
+                }}
+                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm"
+              >
+                <Plus className="w-4 h-4 mr-2" />
                 {showForm ? "Cancel" : "Create New Election"}
               </button>
             </div>
             
             {showForm && (
-              <form onSubmit={handleSubmit} className="mb-8 p-6 border border-gray-200 rounded-xl">
+              <form onSubmit={handleSubmit} className="mt-6 p-6 bg-gray-50 rounded-lg border border-gray-200">
                 <h3 className="text-xl font-semibold text-gray-800 mb-4">Create New Election</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -360,130 +518,107 @@ export default function AdminDashboard() {
                 <div className="mt-6 flex justify-end">
                   <button
                     type="submit"
-                    className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition"
+                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm"
                   >
                     Create Election
                   </button>
                 </div>
               </form>
             )}
-            
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Election
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Location
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Dates
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {elections.map((election) => (
-                    <tr key={election.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{election.title}</div>
-                        <div className="text-sm text-gray-500">{election.description}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 capitalize">
-                          {election.electionType.replace('-', ' ')}
+          </div>
+
+          {/* Elections List */}
+          <div className="space-y-4">
+            {elections.length === 0 ? (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">No elections found. Create your first election to get started.</p>
+              </div>
+            ) : (
+              elections.map((election) => (
+                <div key={election.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  {/* Election Header */}
+                  <div 
+                    className="p-6 cursor-pointer hover:bg-gray-50 transition"
+                    onClick={() => toggleElectionExpand(election.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-xl font-bold text-gray-900">{election.title}</h3>
+                          {getStatusBadge(election)}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{election.state}</div>
-                        {election.district && (
-                          <div className="text-sm text-gray-500">{election.district}</div>
-                        )}
-                        {election.constituency && (
-                          <div className="text-sm text-gray-500">{election.constituency}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {election.startDate} to {election.endDate}
+                        <p className="text-gray-600 mb-3">{election.description}</p>
+                        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                          <span className="flex items-center">
+                            <MapPin className="w-4 h-4 mr-1" />
+                            {election.state}
+                            {election.district && `, ${election.district}`}
+                            {election.constituency && ` - ${election.constituency}`}
+                          </span>
+                          <span className="flex items-center">
+                            <Calendar className="w-4 h-4 mr-1" />
+                            {election.startDate} to {election.endDate}
+                          </span>
+                          <span className={`flex items-center ${Array.isArray(election.candidates) && election.candidates.length > 0 ? 'text-indigo-600 font-semibold' : ''}`}>
+                            <Users className="w-4 h-4 mr-1" />
+                            {Array.isArray(election.candidates) ? election.candidates.length : 0} Candidates
+                            {Array.isArray(election.candidates) && election.candidates.length > 0 && !expandedElections.has(election.id) && (
+                              <span className="ml-2 text-xs text-indigo-500">(Click to view)</span>
+                            )}
+                          </span>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          election.isActive 
-                            ? election.isCompleted 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {election.isCompleted ? 'Completed' : election.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        </div>
+                      <div className="flex items-center gap-2 ml-4">
                         <button
-                          onClick={() => {
-                            setSelectedElectionId(election.id);
-                            setShowCandidateForm(true);
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddCandidateClick(election.id);
                           }}
-                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                          className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
                         >
-                          Add Candidates
+                          <Plus className="w-4 h-4 mr-1" />
+                          Add Candidate
                         </button>
                         {!election.isCompleted && election.isActive && (
                           <button
-                            onClick={() => endElection(election.id)}
-                            className="text-red-600 hover:text-red-900"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              endElection(election.id);
+                            }}
+                            className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
                           >
                             End Election
                           </button>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
             </div>
           </div>
           
-          {/* Candidates Section */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Manage Candidates</h2>
-            
-            {showCandidateForm && (
-              <form onSubmit={handleCandidateSubmit} className="mb-8 p-6 border border-gray-200 rounded-xl">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4">Add New Candidate</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Election *
-                    </label>
-                    <select
-                      name="electionId"
-                      value={candidateData.electionId}
-                      onChange={handleCandidateInputChange}
-                      required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    >
-                      <option value="">Select Election</option>
-                      {elections.map(election => (
-                        <option key={election.id} value={election.id}>
-                          {election.title}
-                        </option>
-                      ))}
-                    </select>
+                  {/* Candidates Section (Expandable) */}
+                  {expandedElections.has(election.id) && (
+                    <div className="border-t border-gray-200 bg-gray-50 p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="text-lg font-semibold text-gray-900">
+                          Candidates ({Array.isArray(election.candidates) ? election.candidates.length : 0})
+                        </h4>
+                        {showCandidateForm && candidateData.electionId === election.id && (
+                          <button
+                            onClick={() => {
+                              setShowCandidateForm(false);
+                              setCandidateData({ name: "", party: "", electionId: "" });
+                            }}
+                            className="text-gray-500 hover:text-gray-700"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        )}
                   </div>
                   
+                      {/* Add Candidate Form */}
+                      {showCandidateForm && candidateData.electionId === election.id && (
+                        <form onSubmit={handleCandidateSubmit} className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Candidate Name *
@@ -515,17 +650,20 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 
-                <div className="mt-6 flex justify-end space-x-3">
+                          <div className="mt-4 flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowCandidateForm(false)}
-                    className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                              onClick={() => {
+                                setShowCandidateForm(false);
+                                setCandidateData({ name: "", party: "", electionId: "" });
+                              }}
+                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition"
+                              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
                   >
                     Add Candidate
                   </button>
@@ -533,60 +671,68 @@ export default function AdminDashboard() {
               </form>
             )}
             
-            {/* Display candidates for each election */}
-            {elections.map(election => (
-              <div key={election.id} className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">{election.title} - Candidates</h3>
-                
-                {election.candidates && election.candidates.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Name
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Party
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Votes
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {election.candidates.map((candidate) => (
-                          <tr key={candidate.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {candidate.name}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {candidate.party}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {candidate.voteCount}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {/* Debug Info */}
+                      <div className="mb-4 text-xs text-gray-500">
+                        Debug: candidates array type: {Array.isArray(election.candidates) ? 'array' : typeof election.candidates}, 
+                        length: {Array.isArray(election.candidates) ? election.candidates.length : 'N/A'}
+                      </div>
+
+                      {/* Candidates List */}
+                      {(() => {
+                        const candidates = Array.isArray(election.candidates) ? election.candidates : [];
+                        const hasCandidates = candidates.length > 0;
+                        
+                        if (!hasCandidates) {
+                          return (
+                            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+                              <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                              <p className="text-gray-500 text-sm">No candidates added yet.</p>
                               <button
-                                onClick={() => handleRemoveCandidate(election.id, candidate.id)}
-                                className="text-red-600 hover:text-red-900"
+                                onClick={() => handleAddCandidateClick(election.id)}
+                                className="mt-3 text-indigo-600 hover:text-indigo-700 text-sm font-medium"
                               >
-                                Remove
+                                Add your first candidate
                               </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500">No candidates added for this election yet.</p>
-                )}
-              </div>
-            ))}
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {candidates.map((candidate: Candidate, index: number) => {
+                              // Ensure we have a valid ID for the candidate
+                              const candidateId = candidate.id || `candidate-${index}`;
+                              
+                              return (
+                                <div key={candidateId} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <div className="flex-1">
+                                      <h5 className="font-semibold text-gray-900">{candidate.name || "Unknown"}</h5>
+                                      <p className="text-sm text-gray-600 mt-1">{candidate.party || "No party"}</p>
+                                    </div>
+                                    <button
+                                      onClick={() => handleRemoveCandidate(election.id, candidateId)}
+                                      className="text-red-600 hover:text-red-800 p-1"
+                                      title="Remove candidate"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                    <span className="text-xs text-gray-500">Votes</span>
+                                    <span className="font-semibold text-indigo-600">{candidate.voteCount || 0}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </main>

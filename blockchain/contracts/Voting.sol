@@ -90,4 +90,25 @@ contract Voting {
         }
         return 0;
     }
+    
+    // Get all votes for an election (vote bank)
+    function getVoteBank(uint electionId) public view returns (VoteRecord[] memory) {
+        return votes[electionId];
+    }
+    
+    // Get total vote count for an election
+    function getTotalVotes(uint electionId) public view returns (uint) {
+        return votes[electionId].length;
+    }
+    
+    // Check if a voter has voted in an election
+    function checkVoterVoted(uint electionId, bytes32 voterHash) public view returns (bool) {
+        return hasVoted[electionId][voterHash];
+    }
+    
+    // Get vote record by index for an election
+    function getVoteByIndex(uint electionId, uint index) public view returns (VoteRecord memory) {
+        require(index < votes[electionId].length, "Vote index out of bounds");
+        return votes[electionId][index];
+    }
 }

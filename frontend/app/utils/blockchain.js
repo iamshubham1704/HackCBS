@@ -48,11 +48,11 @@ export function hashVoterId(voterId, secret = "default_secret") {
 export async function castVoteOnBlockchain(voteData) {
   const { electionId, candidateId, voterId } = voteData;
   
-  // Validate required fields
-  if (!electionId || isNaN(electionId) || !candidateId || isNaN(candidateId) || !voterId) {
+  // Validate required fields (electionId and candidateId can be strings or numbers)
+  if (!electionId || !candidateId || !voterId) {
     return {
       success: false,
-      error: `Missing or invalid required fields: electionId=${electionId}, candidateId=${candidateId}, voterId=${voterId}`
+      error: `Missing required fields: electionId=${electionId}, candidateId=${candidateId}, voterId=${voterId}`
     };
   }
   
@@ -68,26 +68,43 @@ export async function castVoteOnBlockchain(voteData) {
       voterId
     });
     
+    // Get API base URL from environment or use default
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+    
     // In a real implementation, this would call the smart contract
     // For now, we'll make an API call to our backend which handles blockchain interaction
-    const response = await fetch("http://localhost:5000/api/vote", {
+    const response = await fetch(`${API_BASE_URL}/vote`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        userId: "user123", // In a real app, this would be the actual user ID
-        electionId,
-        candidateId,
+        userId: voteData.userId || "user123", // Use userId from voteData if provided
+        electionId, // Keep as string ObjectId
+        candidateId, // Keep as string ObjectId
         voterId
       }),
     });
     
     console.log("Vote API response status:", response.status);
+    console.log("Vote API response headers:", [...response.headers.entries()]);
     
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Vote API error response:", errorData);
+      let errorData;
+      try {
+        errorData = await response.json();
+        console.error("Vote API error response (JSON):", errorData);
+      } catch (jsonError) {
+        // If JSON parsing fails, try to get text
+        try {
+          const errorText = await response.text();
+          console.error("Vote API error response (text):", errorText);
+          errorData = { message: `HTTP ${response.status}: ${errorText}` };
+        } catch (textError) {
+          console.error("Vote API error response (failed to parse):", textError);
+          errorData = { message: `HTTP ${response.status}: Unable to parse error response` };
+        }
+      }
       throw new Error(errorData.message || "Failed to cast vote");
     }
     
@@ -116,9 +133,30 @@ export async function castVoteOnBlockchain(voteData) {
  */
 export async function fetchResultsFromBlockchain(electionId) {
   try {
-    // In a real implementation, this would call the smart contract
-    // For now, we'll make an API call to our backend which handles blockchain interaction
-    const response = await fetch(`http://localhost:5000/api/elections/${electionId}/results`);
+    // Get API base URL from environment or use default
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+    
+    // First try to fetch from the live results endpoint
+    try {
+      const liveResponse = await fetch(`${API_BASE_URL}/elections/${electionId}/results/live`);
+      
+      if (liveResponse.ok) {
+        const liveData = await liveResponse.json();
+        return {
+          candidates: liveData.results.candidates.map(candidate => ({
+            id: candidate.id,
+            name: candidate.name,
+            voteCount: candidate.voteCount,
+            party: candidate.party
+          }))
+        };
+      }
+    } catch (liveError) {
+      console.log("Live results endpoint not available, falling back to legacy endpoint");
+    }
+    
+    // Fall back to the legacy results endpoint
+    const response = await fetch(`${API_BASE_URL}/elections/${electionId}/results`);
     
     if (!response.ok) {
       const errorData = await response.json();
@@ -127,16 +165,31 @@ export async function fetchResultsFromBlockchain(electionId) {
     
     const result = await response.json();
     
-    // Simulate blockchain interaction delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Return candidates from the election results
+    if (result.election && result.election.candidates) {
+      return {
+        candidates: result.election.candidates.map(candidate => ({
+          id: candidate.id,
+          name: candidate.name,
+          voteCount: candidate.voteCount,
+          party: candidate.party
+        }))
+      };
+    }
     
-    return {
-      candidates: result.election.candidates.map(candidate => ({
-        id: candidate.id,
-        name: candidate.name,
-        voteCount: candidate.voteCount
-      }))
-    };
+    // Fallback to results format if available
+    if (result.results && result.results.candidates) {
+      return {
+        candidates: result.results.candidates.map(candidate => ({
+          id: candidate.id,
+          name: candidate.name,
+          voteCount: candidate.votes || candidate.voteCount,
+          party: candidate.party
+        }))
+      };
+    }
+    
+    return { candidates: [] };
   } catch (error) {
     console.error("Blockchain results error:", error);
     return { candidates: [] };
