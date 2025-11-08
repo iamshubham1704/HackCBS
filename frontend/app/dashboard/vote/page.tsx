@@ -138,11 +138,16 @@ export default function VotingPage() {
             : election
         ));
 
+        // Store voting status
+        localStorage.setItem("hasVoted", "true");
+        localStorage.setItem("lastElection", selectedElection.title);
+        localStorage.setItem("transactionHash", result.transactionHash);
+
         // Close modal
         setIsModalOpen(false);
 
-        // Show confirmation with transaction hash      
-        alert(`Your vote has been cast successfully!\nTransaction Hash: ${result.transactionHash}`);
+        // Navigate to badge page
+        router.push(`/badge?voted=true&election=${encodeURIComponent(selectedElection.title)}&tx=${result.transactionHash}`);
       } else {
         throw new Error(result.error || "Failed to cast vote on blockchain");
       }
